@@ -1,0 +1,9 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: admin-system-backend-config
+data:
+  admin-system-backend-config.json: |
+{{ .Values.scrollConfig | indent 4 }}
+---

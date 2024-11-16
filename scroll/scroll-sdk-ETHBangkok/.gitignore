@@ -1,0 +1,14 @@
+*.tgz
+*.lock
+.idea
+genesis.json
+config-contracts.toml
+charts/scroll-sdk/*.json
+.env.frontend
+charts/scroll-values.yaml
+
+.DS_Store
+
+charts/scroll-sdk/configs/*.env
+charts/scroll-sdk/broadcast/
+.vscode/

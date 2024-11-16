@@ -1,0 +1,35 @@
+{{- if .Values.grafana.enabled }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-scroll-dashboards
+  labels:
+    grafana_dashboard: "1"
+data:
+{{ (.Files.Glob "grafana/scroll-dashboards/bridge-history-api.json").AsConfig | indent 2 }}
+{{ (.Files.Glob "grafana/scroll-dashboards/bridge-history-fetcher.json").AsConfig | indent 2 }}
+{{ (.Files.Glob "grafana/scroll-dashboards/chain-monitor.json").AsConfig | indent 2 }}
+{{ (.Files.Glob "grafana/scroll-dashboards/coordinator-api.json").AsConfig | indent 2 }}}}
+{{ (.Files.Glob "grafana/scroll-dashboards/coordinator-cron.json").AsConfig | indent 2 }}
+{{ (.Files.Glob "grafana/scroll-dashboards/gas-oracle.json").AsConfig | indent 2 }}
+{{ (.Files.Glob "grafana/scroll-dashboards/geth.json").AsConfig | indent 2 }}
+{{ (.Files.Glob "grafana/scroll-dashboards/rollup-node.json").AsConfig | indent 2 }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-kubernetes-dashboards
+  labels:
+    grafana_dashboard: "2"
+data:
+{{ (.Files.Glob "grafana/kubernetes-dashboards/k8s-views-pods.json").AsConfig | indent 2 }}
+{{ (.Files.Glob "grafana/kubernetes-dashboards/k8s-views-nodes.json").AsConfig | indent 2 }}
+{{ (.Files.Glob "grafana/kubernetes-dashboards/k8s-views-namespaces.json").AsConfig | indent 2 }}
+{{ (.Files.Glob "grafana/kubernetes-dashboards/k8s-views-global.json").AsConfig | indent 2 }}
+{{ (.Files.Glob "grafana/kubernetes-dashboards/k8s-system-coredns.json").AsConfig | indent 2 }}
+{{ (.Files.Glob "grafana/kubernetes-dashboards/k8s-system-api-server.json").AsConfig | indent 2 }}
+{{ (.Files.Glob "grafana/kubernetes-dashboards/k8s-addons-trivy-operator.json").AsConfig | indent 2 }}
+{{ (.Files.Glob "grafana/kubernetes-dashboards/k8s-addons-prometheus.json").AsConfig | indent 2 }}
+
+{{- end }}

@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  labels:
+    {{- include "scroll-common.labels" $ | nindent 4 }}
+  name: genesis-config
+data:
+  genesis.json: |
+{{ .Values.scrollConfig | indent 4 }}

@@ -1,0 +1,301 @@
+---
+controller:
+  replicas: 1
+  strategy: RollingUpdate
+  type: statefulset
+
+global:
+  nameOverride: &app_name coordinator-api
+  fullnameOverride: *app_name
+
+image:
+  repository: scrolltech/coordinator-api
+  pullPolicy: Always
+  tag: v4.4.59
+
+env:
+  - name: HTTP_PORT
+    value: 8080
+  - name: METRICS_PORT
+    value: 8090
+  - name: RUST_LOG
+    value: info
+  - name: SCROLL_PROVER_ASSETS_DIR
+    value: "/data/assets/"
+
+envFrom:
+  - configMapRef:
+      name: coordinator-api-env
+
+command: [
+  "/bin/sh",
+  "-c",
+  "coordinator_api --config /coordinator/conf/coordinator-config.json \
+    --genesis /app/genesis/genesis.json \
+    --http --http.addr '0.0.0.0' --http.port ${HTTP_PORT} \
+    --metrics --metrics.addr '0.0.0.0' --metrics.port ${METRICS_PORT} \
+    --log.debug"
+]
+
+resources:
+  requests:
+    memory: "20Gi"
+    cpu: "50m"
+  limits:
+    memory: "24Gi"
+    cpu: "200m"
+
+persistence:
+  *app_name:
+    enabled: true
+    type: configMap
+    mountPath: /coordinator/conf/
+    name: coordinator-api-config
+  download-params:
+    enabled: true
+    type: configMap
+    mountPath: /download-params.sh
+    name: coordinator-api-download-params
+    defaultMode: "0777"
+  genesis:
+    enabled: true
+    type: configMap
+    mountPath: /app/genesis/
+    name: genesis-config
+
+volumeClaimTemplates:
+  - name: verifier
+    accessMode: "ReadWriteOnce"
+    size: "100Gi"
+    mountPath: "/verifier"
+
+service:
+  main:
+    enabled: true
+    ports:
+      http:
+        enabled: true
+        port: 80
+        targetPort: 8080
+      metrics:
+        enabled: true
+        port: 8090
+        targetPort: 8090
+
+defaultProbes: &default_probes
+  enabled: false
+  custom: true
+  spec:
+    httpGet:
+      path: "/"
+      port: 8090
+
+probes:
+  liveness:
+    <<: *default_probes
+  readiness:
+    <<: *default_probes
+  startup:
+    <<: *default_probes
+
+initContainers:
+  parameter-download:
+    image: ubuntu
+    command: ["sh", "-c", "/download-params.sh params"]
+    volumeMounts:
+      - name: verifier
+        mountPath: /verifier
+      - name: download-params
+        mountPath: /download-params.sh
+        subPath: download-params.sh
+    resources:
+      requests:
+        memory: "2Gi"
+        cpu: "1"
+      limits:
+        memory: "8Gi"
+        cpu: "2"
+  assets-download:
+    image: ubuntu
+    command: ["sh", "-c", "/download-params.sh assets"]
+    volumeMounts:
+      - name: verifier
+        mountPath: /verifier
+      - name: download-params
+        mountPath: /download-params.sh
+        subPath: download-params.sh
+
+configMaps:
+  download-params:
+    enabled: true
+    data:
+      download-params.sh: |
+        #!/bin/sh
+        set -ex
+        apt update
+        apt install wget libdigest-sha-perl -y
+
+        RELEASE_VERSION_HI=v0.13.1
+        RELEASE_VERSION_LO=v0.12.0
+
+        case $CHAIN_ID in
+        "5343532222") # staging network
+          echo "staging network not supported"
+          exit 1
+          ;;
+        "534353") # alpha network
+          echo "alpha network not supported"
+          exit 1
+          ;;
+        esac
+
+        P_CHECKSUMS=$(wget -O- https://circuit-release.s3.us-west-2.amazonaws.com/setup/sha256sum)
+        # DOWNLOAD_RESULT=$?
+        # ERROR=$(echo "$P_CHECKSUMS" | grep "Error")
+
+        # if [ $DOWNLOAD_RESULT -ne 0 ] || [ "$ERROR" != "" ]; then
+        #   echo "Failed to download params checksums"
+        #   echo "$P_CHECKSUMS"
+        #   exit 1
+        # fi
+
+        R_CHECKSUMS_HI=$(wget -O- https://circuit-release.s3.us-west-2.amazonaws.com/release-$RELEASE_VERSION_HI/sha256sum)
+        # DOWNLOAD_RESULT=$?
+        # ERROR=$(echo "$R_CHECKSUMS_HI" | grep "Error")
+        # if [ $DOWNLOAD_RESULT -ne 0 ] || [ "$ERROR" != "" ]; then
+        #   echo "Failed to download release checksum for $RELEASE_VERSION_HI"
+        #   echo "$R_CHECKSUMS_HI"
+        #   exit 1
+        # fi
+
+        R_CHECKSUMS_LO=$(wget -O- https://circuit-release.s3.us-west-2.amazonaws.com/release-$RELEASE_VERSION_LO/sha256sum)
+        # DOWNLOAD_RESULT=$?
+        # ERROR=$(echo "$R_CHECKSUMS_LO" | grep "Error")
+        # if [ $DOWNLOAD_RESULT -ne 0 ] || [ "$ERROR" != "" ]; then
+        #   echo "Failed to download release checksum for $RELEASE_VERSION_LO"
+        #   echo "$R_CHECKSUMS_LO"
+        #   exit 1
+        # fi
+
+        PARAMS20_SHASUM=$(echo "$P_CHECKSUMS" | grep "params20" | cut -d " " -f 1)
+        PARAMS21_SHASUM=$(echo "$P_CHECKSUMS" | grep "params21" | cut -d " " -f 1)
+        PARAMS24_SHASUM=$(echo "$P_CHECKSUMS" | grep "params24" | cut -d " " -f 1)
+        PARAMS25_SHASUM=$(echo "$P_CHECKSUMS" | grep "params25" | cut -d " " -f 1)
+        PARAMS26_SHASUM=$(echo "$P_CHECKSUMS" | grep "params26" | cut -d " " -f 1)
+
+        # assets_high
+        VK_CHUNK_SHASUM_HI=$(echo "$R_CHECKSUMS_HI" | grep "vk_chunk.vkey" | cut -d " " -f 1)
+        VK_BATCH_SHASUM_HI=$(echo "$R_CHECKSUMS_HI" | grep "vk_batch.vkey" | cut -d " " -f 1)
+        VK_BUNDLE_SHASUM_HI=$(echo "$R_CHECKSUMS_HI" | grep "vk_bundle.vkey" | cut -d " " -f 1)
+        VRFR_SHASUM_HI=$(echo "$R_CHECKSUMS_HI" | grep "evm_verifier.bin" | cut -d " " -f 1)
+        CFG2_SHASUM_HI=$(echo "$R_CHECKSUMS_HI" | grep "layer2.config" | cut -d " " -f 1)
+        CFG4_SHASUM_HI=$(echo "$R_CHECKSUMS_HI" | grep "layer4.config" | cut -d " " -f 1)
+
+        # assets_low
+        VK_CHUNK_SHASUM_LO=$(echo "$R_CHECKSUMS_LO" | grep "vk_chunk.vkey" | cut -d " " -f 1)
+        VK_BATCH_SHASUM_LO=$(echo "$R_CHECKSUMS_LO" | grep "vk_batch.vkey" | cut -d " " -f 1)
+        VK_BUNDLE_SHASUM_LO=$(echo "$R_CHECKSUMS_LO" | grep "vk_bundle.vkey" | cut -d " " -f 1)
+        VRFR_SHASUM_LO=$(echo "$R_CHECKSUMS_LO" | grep "evm_verifier.bin" | cut -d " " -f 1)
+        CFG2_SHASUM_LO=$(echo "$R_CHECKSUMS_LO" | grep "layer2.config" | cut -d " " -f 1)
+        CFG4_SHASUM_LO=$(echo "$R_CHECKSUMS_LO" | grep "layer4.config" | cut -d " " -f 1)
+
+        check_file() {
+          file=$1
+          url=$2
+          shasum=$3
+          if [ -f $file ]; then
+            SHASUM=$(shasum -a 256 $file | cut -d " " -f 1)
+            if [ "$SHASUM" != "$shasum" ]; then
+              echo "Shasum mismatch: expected=$shasum, actual=$SHASUM, Removing incorrect file $file"
+              rm $file
+              download_file $file $url $shasum
+            else
+              echo "Shasum matched, no need to download"
+            fi
+          else
+            download_file $file $url $shasum
+          fi
+        }
+
+        # download files
+        download_file() {
+          file=$1
+          url=$2
+          shasum=$3
+          if [ ! -f $file ]; then
+            mkdir -p $(dirname $file)
+            echo "Downloading $file..."
+            wget --progress=dot:giga $url -O $file
+            echo "Download completed $file"
+            if [ $(shasum -a 256 $file | cut -d " " -f 1) != $shasum ];then exit 1;fi
+          fi
+        }
+
+
+        main(){
+          case $1 in
+            "params")
+              # download params
+              # check_file "/verifier/params/params20" "https://circuit-release.s3.us-west-2.amazonaws.com/setup/params20" "$PARAMS20_SHASUM"
+              # check_file "/verifier/params/params21" "https://circuit-release.s3.us-west-2.amazonaws.com/setup/params21" "$PARAMS21_SHASUM"
+              # check_file "/verifier/params/params24" "https://circuit-release.s3.us-west-2.amazonaws.com/setup/params24" "$PARAMS24_SHASUM"
+              # check_file "/verifier/params/params25" "https://circuit-release.s3.us-west-2.amazonaws.com/setup/params25" "$PARAMS25_SHASUM"
+              check_file "/verifier/params/params26" "https://circuit-release.s3.us-west-2.amazonaws.com/setup/params26" "$PARAMS26_SHASUM"
+              ;;
+            "assets")
+              check_file "/verifier/params/params20" "https://circuit-release.s3.us-west-2.amazonaws.com/setup/params20" "$PARAMS20_SHASUM"
+              check_file "/verifier/params/params21" "https://circuit-release.s3.us-west-2.amazonaws.com/setup/params21" "$PARAMS21_SHASUM"
+              check_file "/verifier/params/params24" "https://circuit-release.s3.us-west-2.amazonaws.com/setup/params24" "$PARAMS24_SHASUM"
+              check_file "/verifier/params/params25" "https://circuit-release.s3.us-west-2.amazonaws.com/setup/params25" "$PARAMS25_SHASUM"
+
+              # download assets_hi
+              check_file "/verifier/assets/hi/vk_chunk.vkey" "https://circuit-release.s3.us-west-2.amazonaws.com/release-$RELEASE_VERSION_HI/vk_chunk.vkey" "$VK_CHUNK_SHASUM_HI"
+              check_file "/verifier/assets/hi/vk_batch.vkey" "https://circuit-release.s3.us-west-2.amazonaws.com/release-$RELEASE_VERSION_HI/vk_batch.vkey" "$VK_BATCH_SHASUM_HI"
+              check_file "/verifier/assets/hi/vk_bundle.vkey" "https://circuit-release.s3.us-west-2.amazonaws.com/release-$RELEASE_VERSION_HI/vk_bundle.vkey" "$VK_BUNDLE_SHASUM_HI"
+              check_file "/verifier/assets/hi/evm_verifier.bin" "https://circuit-release.s3.us-west-2.amazonaws.com/release-$RELEASE_VERSION_HI/evm_verifier.bin" "$VRFR_SHASUM_HI"
+              check_file "/verifier/assets/hi/layer2.config" "https://circuit-release.s3.us-west-2.amazonaws.com/release-$RELEASE_VERSION_HI/layer2.config" "$CFG2_SHASUM_HI"
+              check_file "/verifier/assets/hi/layer4.config" "https://circuit-release.s3.us-west-2.amazonaws.com/release-$RELEASE_VERSION_HI/layer4.config" "$CFG4_SHASUM_HI"
+              # download assets_low
+              check_file "/verifier/assets/lo/vk_chunk.vkey" "https://circuit-release.s3.us-west-2.amazonaws.com/release-$RELEASE_VERSION_LO/vk_chunk.vkey" "$VK_CHUNK_SHASUM_LO"
+              check_file "/verifier/assets/lo/vk_batch.vkey" "https://circuit-release.s3.us-west-2.amazonaws.com/release-$RELEASE_VERSION_LO/vk_batch.vkey" "$VK_BATCH_SHASUM_LO"
+              check_file "/verifier/assets/lo/vk_bundle.vkey" "https://circuit-release.s3.us-west-2.amazonaws.com/release-$RELEASE_VERSION_LO/vk_bundle.vkey" "$VK_BUNDLE_SHASUM_LO"
+              check_file "/verifier/assets/lo/evm_verifier.bin" "https://circuit-release.s3.us-west-2.amazonaws.com/release-$RELEASE_VERSION_LO/evm_verifier.bin" "$VRFR_SHASUM_LO"
+              check_file "/verifier/assets/lo/layer2.config" "https://circuit-release.s3.us-west-2.amazonaws.com/release-$RELEASE_VERSION_LO/layer2.config" "$CFG2_SHASUM_LO"
+              check_file "/verifier/assets/lo/layer4.config" "https://circuit-release.s3.us-west-2.amazonaws.com/release-$RELEASE_VERSION_LO/layer4.config" "$CFG4_SHASUM_LO"
+              ;;
+              *)
+                echo "only supports params or assets"
+                exit 1
+                ;;
+          esac
+        }
+
+        main $1
+        ls -R /verifier/assets
+
+serviceMonitor:
+  main:
+    enabled: true
+    labels:
+      release: scroll-sdk
+    serviceName: '{{ include "scroll.common.lib.chart.names.fullname" $ }}'
+    endpoints:
+      - port: metrics
+        interval: 1m
+        scrapeTimeout: 10s
+
+ingress:
+  main:
+    enabled: true
+    primary: true
+    annotations: {}
+    labels: {}
+    ingressClassName: "nginx"
+    hosts:
+      - host: coordinator-api.scrollsdk
+        paths:
+          - path: /
+            pathType: Prefix
+
+scrollConfig: |
+  {}

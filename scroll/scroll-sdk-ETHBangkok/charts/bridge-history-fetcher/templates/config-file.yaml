@@ -1,0 +1,10 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: bridge-history-fetcher-config
+  labels:
+    {{- include "scroll-sdk.labels" $ | nindent 4 }}
+data:
+  bridge-history-fetcher-config.json: |
+{{ .Values.scrollConfig | indent 4 }}

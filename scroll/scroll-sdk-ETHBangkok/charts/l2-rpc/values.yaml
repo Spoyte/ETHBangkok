@@ -1,0 +1,184 @@
+---
+global:
+  nameOverride: &app_name l2-rpc
+  fullnameOverride: *app_name
+
+controller:
+  replicas: 1
+  strategy: RollingUpdate
+  type: statefulset
+
+image:
+  repository: scrolltech/l2geth
+  pullPolicy: Always
+  tag: scroll-v5.7.25
+
+service:
+  main:
+    enabled: true
+    ports:
+      http:
+        enabled: true
+        port: 8545
+      ws:
+        enabled: true
+        port: 8546
+      metrics:
+        enabled: true
+        port: 6060
+        targetPort: 6060
+
+defaultProbes: &default_probes
+  enabled: true
+  custom: true
+  spec:
+    httpGet:
+      path: "/"
+      port: 8545
+
+probes:
+  liveness:
+    <<: *default_probes
+  readiness:
+    <<: *default_probes
+  startup:
+    <<: *default_probes
+
+env:
+  - name: L2GETH_NODEKEY
+    value: ""
+  - name: L2GETH_L1_WATCHER_CONFIRMATIONS
+    value: "0x6"
+  - name: L2GETH_RPC_HTTP_PORT
+    value: 8545
+  - name: L2GETH_RPC_WS_PORT
+    value: 8546
+  - name: L2GETH_P2P_PORT
+    value: 30303
+  - name: L2GETH_CCC_FLAG
+    value: "--ccc"
+  - name: L2GETH_CCC_NUMWORKERS
+    value: "5"
+  - name: L2GETH_MAX_PEERS
+    value: 500
+  - name: VERBOSITY
+    value: 3
+  - name: L2GETH_MIN_GAS_PRICE
+    value: "1000000"
+  - name: L2GETH_GLOBAL_QUEUE
+    value: "4096"
+  - name: L2GETH_ACCOUNT_QUEUE
+    value: "256"
+  - name: L2GETH_GLOBAL_SLOTS
+    value: "40960"
+  - name: L2GETH_ACCOUNT_SLOTS
+    value: "128"
+  - name: L2GETH_EXTRA_PARAMS
+    value: ""
+
+envFrom:
+  - configMapRef:
+      name: l2-rpc-env
+
+command:
+  [
+    "bash",
+    "-c",
+    "geth --datadir \"/l2geth/data\" init /l2geth/genesis/genesis.json && \
+    echo \"[Node.P2P] StaticNodes = $L2GETH_PEER_LIST\" > \"/l2geth/config.toml\" && \
+    geth \
+    --datadir \"/l2geth/data\" \
+    --port \"$L2GETH_P2P_PORT\" --nodiscover --syncmode full --networkid \"$CHAIN_ID\" \
+    --config \"/l2geth/config.toml\" \
+    --http --http.port \"$L2GETH_RPC_HTTP_PORT\" --http.addr \"0.0.0.0\" --http.vhosts=\"*\" --http.corsdomain '*' --http.api \"eth,scroll,net,web3,debug\" \
+    --pprof --pprof.addr \"0.0.0.0\" --pprof.port 6060 \
+    --ws --ws.port \"$L2GETH_RPC_WS_PORT\" --ws.addr \"0.0.0.0\" --ws.api \"eth,scroll,net,web3,debug\" \
+    $L2GETH_CCC_FLAG --ccc.numworkers \"$L2GETH_CCC_NUMWORKERS\" \
+    $METRICS_FLAGS \
+    --gcmode archive \
+    --cache.noprefetch \
+    --verbosity 3 \
+    --txpool.globalqueue \"$L2GETH_GLOBAL_QUEUE\" --txpool.accountqueue \"$L2GETH_ACCOUNT_QUEUE\" \
+    --txpool.globalslots \"$L2GETH_GLOBAL_SLOTS\" --txpool.accountslots \"$L2GETH_ACCOUNT_SLOTS\" \
+    --txpool.pricelimit \"$L2GETH_MIN_GAS_PRICE\" $LOCALS_FLAG \
+    --miner.gasprice \"$L2GETH_MIN_GAS_PRICE\" --rpc.gascap 0 \
+    --gpo.ignoreprice \"$L2GETH_MIN_GAS_PRICE\" --gpo.percentile 20 --gpo.blocks 100 \
+    --gpo.congestionthreshold 500 \
+    --l1.endpoint \"$L2GETH_L1_ENDPOINT\" --l1.confirmations \"$L2GETH_L1_WATCHER_CONFIRMATIONS\" --l1.sync.startblock \"$L2GETH_L1_CONTRACT_DEPLOYMENT_BLOCK\" \
+    --rollup.verify \
+    --metrics --metrics.expensive \
+    $L2GETH_EXTRA_PARAMS"
+  ]
+
+initContainers:
+  1-wait-for-l1:
+    image: scrolltech/scroll-alpine:v0.0.1
+    command:
+      - /bin/sh
+      - -c
+      - /wait-for-l1.sh $L2GETH_L1_ENDPOINT
+    envFrom:
+      - configMapRef:
+          name: l2-rpc-env
+    volumeMounts:
+      - name: wait-for-l1-script
+        mountPath: /wait-for-l1.sh
+        subPath: wait-for-l1.sh
+
+persistence:
+  env:
+    enabled: true
+    type: configMap
+    mountPath: /config/
+    name: l2-rpc-env
+  genesis:
+    enabled: true
+    type: configMap
+    mountPath: /l2geth/genesis/
+    name: genesis-config
+  wait-for-l1-script:
+    enabled: true
+    type: configMap
+    name: wait-for-l1-script
+    defaultMode: "0777"
+
+volumeClaimTemplates:
+  - name: data
+    accessMode: "ReadWriteOnce"
+    size: "100Gi"
+    mountPath: "/l2geth/data"
+
+ingress:
+  main:
+    enabled: true
+    primary: true
+    annotations: {}
+    labels: {}
+    ingressClassName: "nginx"
+    hosts:
+      - host: l2-rpc.scrollsdk
+        paths:
+          - path: /
+            pathType: Prefix
+  websocket:  #  dedicated websocket ingress
+    enabled: true
+    ingressClassName: "nginx"
+    hosts:
+      - host: l2-rpc-ws.scrollsdk
+        paths:
+          - path: /
+            pathType: Prefix
+            service:
+              port: 8546
+
+serviceMonitor:
+  main:
+    enabled: true
+    labels:
+      release: scroll-sdk
+    serviceName: '{{ include "scroll.common.lib.chart.names.fullname" $ }}'
+    endpoints:
+      - port: metrics
+        interval: 1m
+        scrapeTimeout: 10s
+        path: /debug/metrics/prometheus

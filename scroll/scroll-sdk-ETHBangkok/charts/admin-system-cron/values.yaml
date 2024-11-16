@@ -1,0 +1,102 @@
+---
+global:
+  nameOverride: &app_name admin-system-cron
+  fullnameOverride: *app_name
+
+controller:
+  replicas: 1
+  strategy: Recreate
+  type: deployment
+
+image:
+  repository: scrolltech/scroll-admin-cron
+  pullPolicy: Always
+  tag: v0.1.0
+
+env:
+  - name: ENV
+    value: "fake"
+  - name: CHAIN_ID
+    value: "222222"
+  - name: HTTP_PORT
+    value: "8080"
+  - name: METRICS_PORT
+    value: "8090"
+  - name: GIN_MODE
+    value: "release"
+
+envFrom:
+  - configMapRef:
+      name: admin-system-cron-env
+
+command: [
+  "/bin/sh",
+  "-c",
+  "scroll-admin-cron --config /app/config/admin-system-backend-config.json \
+  --http.port ${HTTP_PORT} \
+  --metrics --metrics.port ${METRICS_PORT}",
+]
+
+resources:
+  requests:
+    memory: "500Mi"
+    cpu: "500m"
+  limits:
+    memory: "1Gi"
+    cpu: "1"
+
+service:
+  main:
+    enabled: true
+    primary: true
+    ports:
+      http:
+        primary: true
+        enabled: true
+        port: 8080
+        protocol: HTTP
+      metrics:
+        enabled: true
+        port: 8090
+        targetPort: 8090
+
+probes:
+  liveness:
+    enabled: false
+  readiness:
+    enabled: false
+  startup:
+    enabled: false
+
+persistence:
+  *app_name:
+    enabled: true
+    type: configMap
+    mountPath: /app/config/
+    name: admin-system-cron-config
+
+initContainers:
+  1-check-postgres-connection:
+    image: atkrad/wait4x:latest
+    args:
+      - postgresql
+      - $(SCROLL_ADMIN_AUTH_DB_CONFIG_DSN)
+      - --timeout
+      - "0"
+    envFrom:
+      - configMapRef:
+          name: admin-system-cron-env
+
+serviceMonitor:
+  main:
+    enabled: true
+    labels:
+      release: scroll-stack
+    serviceName: '{{ include "scroll.common.lib.chart.names.fullname" $ }}'
+    endpoints:
+      - port: http
+        interval: 1m
+        scrapeTimeout: 10s
+
+scrollConfig: |
+  {}

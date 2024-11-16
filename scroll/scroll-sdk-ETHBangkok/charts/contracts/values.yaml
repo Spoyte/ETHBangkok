@@ -1,0 +1,19 @@
+---
+global:
+  isStandalone: false
+
+image:
+  repository: scrolltech/scroll-stack-contracts
+  tag: deploy-2eba3d2c418b16f4a66d9baadeb1c1bafdca81b1
+
+envFrom:
+  - configMapRef:
+      name: contracts-deployment-env
+
+# here is the place for the config.toml file
+scrollConfig: |
+  {}
+
+# here is the place for the config-contracts.toml file
+scrollConfigContracts: |
+  {}

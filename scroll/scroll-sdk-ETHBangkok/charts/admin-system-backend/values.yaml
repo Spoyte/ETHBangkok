@@ -1,0 +1,192 @@
+---
+global:
+  nameOverride: &app_name admin-system-backend
+  fullnameOverride: *app_name
+
+controller:
+  replicas: 1
+  strategy: Recreate
+  type: deployment
+
+image:
+  repository: scrolltech/scroll-admin-system
+  pullPolicy: Always
+  tag: v0.1.2
+
+env:
+  - name: HTTP_PORT
+    value: "8080"
+  - name: METRICS_PORT
+    value: "8090"
+  - name: GIN_MODE
+    value: "release"
+  - name: ENV
+    value: "fake"
+  - name: CHAIN_ID
+    value: "123456"
+
+envFrom:
+  - configMapRef:
+      name: admin-system-backend-env
+
+command: [
+  "/bin/sh",
+  "-c",
+  "scroll-admin-system --config /app/config/admin-system-backend-config.json \
+  --genesis /app/genesis/genesis.json \
+  --http.port ${HTTP_PORT} \
+  --metrics --metrics.port ${METRICS_PORT}",
+]
+
+resources:
+  requests:
+    memory: "50Mi"
+    cpu: "50m"
+  limits:
+    memory: "200Mi"
+    cpu: "100m"
+
+service:
+  main:
+    enabled: true
+    primary: true
+    ports:
+      http:
+        primary: true
+        enabled: true
+        port: 8080
+        protocol: HTTP
+      metrics:
+        enabled: true
+        port: 8090
+        targetPort: 8090
+
+probes:
+  liveness:
+    enabled: false
+  readiness:
+    enabled: false
+  startup:
+    enabled: false
+
+
+persistence:
+  *app_name:
+    enabled: true
+    type: configMap
+    mountPath: /app/config/
+    name: admin-system-backend-config
+  genesis:
+    enabled: true
+    type: configMap
+    mountPath: /app/genesis/
+    name: genesis-config
+  model-conf:
+    enabled: true
+    type: configMap
+    mountPath: /app/conf/model.conf
+    subPath: model.conf
+    name: admin-system-backend-model-conf
+  policy-csv:
+    enabled: true
+    type: configMap
+    mountPath: /app/conf/policy.csv
+    subPath: policy.csv
+    name: admin-system-backend-policy-csv
+  add-user:
+    enabled: true
+    type: configMap
+    mountPath: /app/conf/add-user.sh
+    subPath: add-user.sh
+    name: admin-system-backend-add-user
+    defaultMode: "0777"
+
+initContainers:
+  1-check-postgres-connection:
+    image: atkrad/wait4x:latest
+    args:
+      - postgresql
+      - $(SCROLL_ADMIN_AUTH_DB_CONFIG_DSN)
+      - --timeout
+      - "0"
+    envFrom:
+      - configMapRef:
+          name: admin-system-backend-env
+  2-migrate-db:
+    image: scrolltech/scroll-admin-system:v0.1.2
+    command: [
+      "/bin/sh",
+      "-c",
+      "db_cli migrate --config /app/config/admin-system-backend-config.json"
+    ]
+    volumeMounts:
+      - name: *app_name
+        mountPath: /app/config/
+    envFrom:
+      - configMapRef:
+          name: admin-system-backend-env
+  3-add-user:
+    image: postgres:latest
+    command: ["bash", "-c", "/add-user.sh"]
+    volumeMounts:
+      - name: add-user
+        mountPath: /add-user.sh
+        subPath: add-user.sh
+    envFrom:
+      - configMapRef:
+          name: admin-system-backend-env
+
+configMaps:
+  model-conf:
+    enabled: true
+    data:
+      model.conf: |
+        [request_definition]
+        r = sub, obj, act
+        [policy_definition]
+        p = sub, obj, act
+        [role_definition]
+        g = _, _
+        [policy_effect]
+        e = some(where (p.eft == allow))
+        [matchers]
+        m = g(r.sub, p.sub) && regexMatch(r.obj, p.obj) && regexMatch(r.act, p.act)
+  policy-csv:
+    enabled: true
+    data:
+      policy.csv: |
+        p, undefined, ^\/api\/v1\/login$, POST
+        p, undefined, ^\/api\/v1\/otp\/.*$, (GET)|(POST)
+        p, read, ^\/api\/v1\/(chunk|batch|bundle|provertask|l2_block|prover|job)\/.*$, GET
+        p, read, ^\/api\/v1\/(chunk|batch|bundle|provertask|l2_block|prover)\/search$, POST
+        p, readwrite, ^\/api\/v1\/(chunk|batch|bundle|l2_block)\/.*$, (POST)|(DELETE)
+        p, readwrite, ^\/api\/v1\/provertask\/(update|delete)$, (POST)|(DELETE)
+        p, admin, ^\/api\/v1\/provertask\/reassign$, POST
+        p, admin, ^\/api\/v1\/(policy|user|prover_block|partner)\/.*$,(GET)|(POST)|(DELETE)
+        p, admin, ^\/api\/v1\/job\/.*$, POST
+        g, read, undefined
+        g, readwrite, read
+        g, admin, readwrite
+  add-user:
+    enabled: true
+    data:
+      add-user.sh: |
+        #!/bin/bash
+        echo "Adding users..."
+        psql $SCROLL_ADMIN_AUTH_DB_CONFIG_DSN -c "INSERT INTO users (username, role) VALUES ('admin', 1);"
+        psql $SCROLL_ADMIN_AUTH_DB_CONFIG_DSN -c "INSERT INTO users (username, role) VALUES ('normal', 3);"
+        echo "Users added."
+
+serviceMonitor:
+  main:
+    enabled: true
+    labels:
+      release: scroll-stack
+    serviceName: '{{ include "scroll.common.lib.chart.names.fullname" $ }}'
+    endpoints:
+      - port: http
+        interval: 1m
+        scrapeTimeout: 10s
+
+scrollConfig: |
+  {}
