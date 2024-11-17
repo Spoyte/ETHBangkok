@@ -27,3 +27,4 @@ https://docs.scroll.io/en/sdk/guides/devnet-deployment/#troubleshooting
 <img src="screenshots/screenshot15.png" alt="alt text" width="50%">
 <img src="screenshots/screenshot16.png" alt="alt text" width="50%">
 <img src="screenshots/screenshot17.png" alt="alt text" width="50%">
+<img src="screenshots/screenshot18.png" alt="alt text" width="50%">
