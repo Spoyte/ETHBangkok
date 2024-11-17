@@ -4,8 +4,24 @@ out = "out"
 libs = ["lib"]
 ffi = true
 fs_permissions = [{ access = "read-write", path = ".forge-snapshots/"}]
-solc_version = "0.8.26"
-evm_version = "cancun"
 
+# Compiler settings
+solc = "0.8.24"
+evm_version = "cancun"
+optimizer = true
+optimizer_runs = 1000000
+
+# Required remappings for Uniswap v4 and Pyth
+remappings = [
+    "forge-std/=lib/forge-std/src/",
+    "v4-core/=lib/v4-core/",
+    "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",
+    "@pythnetwork/entropy-sdk-solidity/=node_modules/@pythnetwork/entropy-sdk-solidity/",
+    "permit2/=lib/permit2/src/"
+]
+
+# Allow higher bytecode size for v4 hooks
+bytecode_hash = "none"
+cbor = false
 
 # See more config options https://github.com/foundry-rs/foundry/tree/master/config

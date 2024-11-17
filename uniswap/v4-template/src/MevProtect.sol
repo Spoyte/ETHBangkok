@@ -14,7 +14,7 @@ import {IEntropyConsumer} from "@pythnetwork/entropy-sdk-solidity/IEntropyConsum
 import {IEntropy} from "@pythnetwork/entropy-sdk-solidity/IEntropy.sol";
 
 // Chronicle imports (you'll need to add these)
-import {IChronicle} from "./interfaces/IChronicle.sol";
+import {IChronicle} from "../lib/IChronicle.sol";
 
 contract MevProtect is BaseHook, IEntropyConsumer {
     using PoolIdLibrary for PoolKey;
