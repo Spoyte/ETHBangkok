@@ -8,6 +8,8 @@
 The solution is located at the end of the documentation, I think it'd be better to move it up:
 https://docs.scroll.io/en/sdk/guides/devnet-deployment/#troubleshooting
 
+4. At the end, we were successful on deploying the local devnet on macbook air with 16gb of ram after hitting limitations on a less powerful pc. We were able to test transactions, bridging
+
 ## Screenshots
 <img src="screenshots/screenshot1.png" alt="alt text" width="50%">
 <img src="screenshots/screenshot2.png" alt="alt text" width="50%">
