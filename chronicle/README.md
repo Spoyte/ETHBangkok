@@ -37,7 +37,7 @@ yarn install
 Fork your target network, leave this terminal window open as it runs your local chain.
 
 ```
-export ETH_RPC_URL='https://your-sepolia-rpc-server/etc'
+export ETH_RPC_URL='https://rpc.sepolia.blockscout.com'
 yarn fork
 ```
 
